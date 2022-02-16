@@ -1,6 +1,7 @@
-use std::error::Error;
-
 use clap::{App, Arg};
+use std::error::Error;
+use std::fs::File;
+use std::io::{self, BufRead, BufReader};
 
 #[derive(Debug)]
 pub struct Config {
@@ -24,15 +25,15 @@ pub fn get_args() -> MyResult<Config> {
                 .default_value("-"),
         )
         .arg(
-            Arg::with_name("number_lines")
+            Arg::with_name("number")
                 .short("n")
                 .long("number")
                 .help("Number Lines")
                 .takes_value(false)
-                .conflicts_with("nonblank"),
+                .conflicts_with("number_nonblank"),
         )
         .arg(
-            Arg::with_name("nonblank")
+            Arg::with_name("number_nonblank")
                 .short("b")
                 .long("number-nonblank")
                 .help("Number non-blank Lines")
@@ -42,12 +43,43 @@ pub fn get_args() -> MyResult<Config> {
 
     Ok(Config {
         files: matches.values_of_lossy("files").unwrap(),
-        number_lines: matches.is_present("number_lines"),
-        number_nonblank_lines: matches.is_present("number_nonblank_lines"),
+        number_lines: matches.is_present("number"),
+        number_nonblank_lines: matches.is_present("number_nonblank"),
     })
 }
 
+fn open(filename: &str) -> MyResult<Box<dyn BufRead>> {
+    match filename {
+        "-" => Ok(Box::new(BufReader::new(io::stdin()))),
+        _ => Ok(Box::new(BufReader::new(File::open(filename)?))),
+    }
+}
+
+fn print_file(file: Box<dyn BufRead>, number_lines: bool, number_nb_lines: bool) {
+    let mut last_num = 0;
+    for (line_num, line_result) in file.lines().enumerate() {
+        let line = line_result.unwrap();
+        if number_lines {
+            println!("{:6}\t{}", line_num + 1, line);
+        } else if number_nb_lines {
+            if !line.is_empty() {
+                last_num += 1;
+                println!("{:6}\t{}", last_num, line)
+            } else {
+                println!()
+            }
+        } else {
+            println!("{}", line);
+        }
+    }
+}
+
 pub fn run(config: Config) -> MyResult<()> {
-    dbg!(config);
+    for filename in config.files {
+        match open(&filename) {
+            Err(err) => eprintln!("Failed to open {}:  {}", filename, err),
+            Ok(file) => print_file(file, config.number_lines, config.number_nonblank_lines),
+        }
+    }
     Ok(())
 }
